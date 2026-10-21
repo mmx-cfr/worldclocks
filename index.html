@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Clocks</title>
+<style>
+  :root {
+    --font: "Season Sans", "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+    --bg: #0b0806;
+    --face: #0b0806;
+    --tick: #f2f2f4;
+    --tick-dim: #b9b9c0;
+    --numeral: #ffffff;
+    --hand: #f6f6f8;
+    --second: #ff2a2a;
+    --label: #f2f2f4;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: var(--font);
+  }
+
+  /* Stage keeps a fixed 1024:200 aspect ratio and scales to fit any window */
+  .stage {
+    width: min(100vw, calc(100vh * 1024 / 200));
+    aspect-ratio: 1024 / 200;
+    container-type: inline-size;
+    background: var(--bg);
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-items: center;
+    padding: 0 1cqw;
+  }
+
+  .clock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 1.2cqw 0 0.6cqw;
+  }
+
+  .clock svg {
+    display: block;
+    height: 84%;
+    width: auto;
+    aspect-ratio: 1 / 1;
+  }
+
+  .label {
+    margin-top: 0.5cqw;
+    font-size: 1.35cqw;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--label);
+    white-space: nowrap;
+  }
+
+  .numeral {
+    fill: var(--numeral);
+    font-weight: 700;
+    font-size: 19px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    font-family: var(--font);
+  }
+
+  .tick-minute { stroke: var(--tick-dim); stroke-width: 2; stroke-linecap: butt; }
+  .tick-hour   { stroke: var(--tick);     stroke-width: 4.5; stroke-linecap: butt; }
+
+  .hand-hour, .hand-minute {
+    stroke: var(--hand);
+    stroke-linecap: round;
+  }
+  .hand-hour   { stroke-width: 7; }
+  .hand-minute { stroke-width: 5.5; }
+
+  .hand-second { stroke: var(--second); stroke-width: 1.8; stroke-linecap: round; }
+  .hub { fill: var(--second); }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Hands still tick once per second; no smooth sweep */
+  }
+</style>
+</head>
+<body>
+
+<main class="stage" id="stage" aria-label="World clocks"></main>
+
+<script>
+  // Edit this list to change cities or time zones (IANA names).
+  const CLOCKS = [
+    { label: "New York",    tz: "America/New_York" },
+    { label: "Los Angeles", tz: "America/Los_Angeles" },
+    { label: "London",      tz: "Europe/London" },
+    { label: "Beijing",     tz: "Asia/Shanghai" },
+    { label: "Tokyo",       tz: "Asia/Tokyo" }
+  ];
+
+  const SMOOTH_SECOND_HAND = true;   // false = ticking second hand
+  const NS = "http://www.w3.org/2000/svg";
+  const stage = document.getElementById("stage");
+
+  function el(name, attrs, parent) {
+    const node = document.createElementNS(NS, name);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(node);
+    return node;
+  }
+
+  function polar(r, deg) {
+    const rad = (deg - 90) * Math.PI / 180;
+    return [100 + r * Math.cos(rad), 100 + r * Math.sin(rad)];
+  }
+
+  function buildClock(cfg) {
+    const wrap = document.createElement("div");
+    wrap.className = "clock";
+
+    const svg = el("svg", { viewBox: "0 0 200 200", role: "img", "aria-label": cfg.label + " clock" }, wrap);
+    el("circle", { cx: 100, cy: 100, r: 99, fill: "var(--face)" }, svg);
+
+    // Ticks
+    for (let i = 0; i < 60; i++) {
+      const isHour = i % 5 === 0;
+      const [x1, y1] = polar(isHour ? 80 : 88, i * 6);
+      const [x2, y2] = polar(95, i * 6);
+      el("line", {
+        x1, y1, x2, y2,
+        class: isHour ? "tick-hour" : "tick-minute",
+        "stroke-dasharray": isHour ? "none" : "none"
+      }, svg);
+    }
+
+    // Numerals
+    for (let n = 1; n <= 12; n++) {
+      const [x, y] = polar(66, n * 30);
+      const t = el("text", { x, y, class: "numeral" }, svg);
+      t.textContent = n;
+    }
+
+    // Hands
+    const hour   = el("line", { x1: 100, y1: 108, x2: 100, y2: 56, class: "hand-hour" }, svg);
+    const minute = el("line", { x1: 100, y1: 110, x2: 100, y2: 30, class: "hand-minute" }, svg);
+    const second = el("g", {}, svg);
+    el("line", { x1: 100, y1: 122, x2: 100, y2: 22, class: "hand-second" }, second);
+    el("circle", { cx: 100, cy: 100, r: 4, class: "hub" }, svg);
+
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = cfg.label;
+    wrap.appendChild(label);
+
+    stage.appendChild(wrap);
+
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: cfg.tz,
+      hourCycle: "h23",
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric"
+    });
+
+    return { hour, minute, second, fmt };
+  }
+
+  const clocks = CLOCKS.map(buildClock);
+
+  function tick() {
+    const now = new Date();
+    const ms = now.getMilliseconds();
+
+    for (const c of clocks) {
+      const parts = c.fmt.formatToParts(now);
+      let h = 0, m = 0, s = 0;
+      for (const p of parts) {
+        if (p.type === "hour")   h = +p.value;
+        if (p.type === "minute") m = +p.value;
+        if (p.type === "second") s = +p.value;
+      }
+      const secF = SMOOTH_SECOND_HAND ? s + ms / 1000 : s;
+      const minF = m + secF / 60;
+      const hrF  = (h % 12) + minF / 60;
+
+      c.hour.setAttribute("transform",   "rotate(" + (hrF * 30)  + " 100 100)");
+      c.minute.setAttribute("transform", "rotate(" + (minF * 6)  + " 100 100)");
+      c.second.setAttribute("transform", "rotate(" + (secF * 6)  + " 100 100)");
+    }
+    requestAnimationFrame(tick);
+  }
+
+  requestAnimationFrame(tick);
+</script>
+</body>
+</html>
